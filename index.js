@@ -2,10 +2,8 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const puppeteer = require('puppeteer');
 const TelegramBot = require('node-telegram-bot-api');
-const path = require('path')
 const fs = require('fs');
-const sharp = require('sharp');
-const { Readable } = require('stream');
+
 
 
 // Configurar o token do seu bot do Telegram
