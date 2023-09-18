@@ -1,325 +1,257 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
-const puppeteer = require('puppeteer');
-const TelegramBot = require('node-telegram-bot-api');
-const fs = require('fs');
-
-
+const axios = require("axios");
+const cheerio = require("cheerio");
+const puppeteer = require("puppeteer");
+const TelegramBot = require("node-telegram-bot-api");
+const fs = require("fs");
+const { createCanvas, loadImage, registerFont } = require("canvas");
 
 // Configurar o token do seu bot do Telegram
-const telegramToken = '6190693318:AAE0Rh7x91AmTnKlaOB-yXO1mAf7isYuUss';
+const telegramToken = "6190693318:AAE0Rh7x91AmTnKlaOB-yXO1mAf7isYuUss";
 const bot = new TelegramBot(telegramToken, { polling: true });
-
-function isMagazineLuizaURL(url) {
-    const pattern = /https:\/\/www\.magazinevoce\.com\.br\/[a-zA-Z0-9-]+\/[a-zA-Z0-9-]+\/p\/[0-9]+\/te\/[a-zA-Z0-9-]+/i;
-    return pattern.test(url);
-}
 
 // Verificar se a URL pertence à Amazon
 function isAmazonURL(url) {
-    const pattern = /^https:\/\/amzn\.to\/[a-zA-Z0-9]+$/i;
-    return pattern.test(url);
+  const pattern = /^https:\/\/amzn\.to\/[a-zA-Z0-9]+$/i;
+  return pattern.test(url);
+}
+
+function saveImage(url) {
+  const imageUrl = url;
+
+  // Nome do arquivo de destino
+  const nomeArquivo = "imagem.jpg";
+
+  // Caminho completo do arquivo de destino
+  const caminhoCompleto = `./${nomeArquivo}`;
+
+  // Faça o download da imagem
+  axios({
+    method: "get",
+    url: imageUrl,
+    responseType: "stream",
+  })
+    .then((response) => {
+      // Crie um fluxo de escrita para salvar a imagem localmente
+      const fileWriteStream = fs.createWriteStream(caminhoCompleto);
+
+      // Pipe (encaminhe) o fluxo de leitura da resposta do axios para o fluxo de escrita do arquivo
+      response.data.pipe(fileWriteStream);
+
+      // Aguarde até que o arquivo seja totalmente salvo
+      fileWriteStream.on("finish", () => {
+        console.log(`Imagem salva em: ${caminhoCompleto}`);
+      });
+    })
+    .catch((error) => {
+      console.error("Erro ao fazer o download da imagem:", error);
+    });
 }
 
 // Função para extrair dados da página do produto
 async function scrapeProductData(url) {
-    const response = await axios.get(url);
-    const html = response.data;
-    const $ = cheerio.load(html);
+  const response = await axios.get(url);
+  const html = response.data;
+  const $ = cheerio.load(html);
 
-    if(isMagazineLuizaURL(url)) {
-        console.log('URL Magalu')
-        const title = $('.sc-dcJsrY.jjGTqv').text(); // Extrair o título da página
-        const price = $('.sc-dcJsrY.eLxcFM.sc-kbdlSk.edtRSh').text(); // Extrair o preço do produto
-        const image = $('.sc-fUnMCh.lhoQy').attr('src'); // Extrair o URL da imagem do produto
-        const installment = $('.sc-dcJsrY.eRIzys.sc-bdOgaJ.kflUR').text(); // Extrair informações de parcelamento
+  if (isAmazonURL(url)) {
+    console.log("URL Amazon");
+    const title = $("#productTitle").text(); // Extrair o título da página
+    // const priceSymbol = $('.a-price-symbol').text();
+    // const priceValue = $('.a-price-whole').text();
+    const price = $(".priceToPay").prop('innerText'); // Extrair o preço do produto
+    const image = $(".a-dynamic-image").attr("src"); // Extrair o URL da imagem do produto
+    const installment = $(".best-offer-name.a-text-bold").text(); // Extrair informações de parcelamento
 
-        const newTitle = title.substring(0, 47) + '...'
+    const newTitle = title.substring(0, 47) + "...";
 
-        console.log(newTitle, url)
-        return { newTitle, price, image, installment, url};
-    }
 
-    if(isAmazonURL(url)) {
-        console.log('URL Amazon')
-        const title = $('#productTitle').text(); // Extrair o título da página
-        // const priceSymbol = $('.a-price-symbol').text();
-        // const priceValue = $('.a-price-whole').text();
-        const price = $('.priceToPay .a-offscreen').text(); // Extrair o preço do produto
-        const image = $('.a-dynamic-image').attr('src'); // Extrair o URL da imagem do produto
-        const installment = $('.best-offer-name.a-text-bold').text(); // Extrair informações de parcelamento
+    // Use uma expressão regular para encontrar todas as ocorrências de "R" seguidas por números e vírgulas.
+    const regex = /R[\d,]+/g;
 
-        const newTitle = title.substring(0, 47) + '...'
-        // const price = priceSymbol + '' + priceValue + ',' + pricedecimal
-        console.log(price)
+    // Use o método match para encontrar todas as correspondências na string.
+    const correspondencias = price.match(regex);
 
-        console.log(newTitle, url)
-        return { newTitle, price, image, installment, url};
-    }
-    
+    console.log(correspondencias); // Isso retornará ["R$46,90", "R$46,90"]
+
+    const newPrice = price.split("\n");
+    console.log(newPrice);
+
+    console.log(newTitle, url);
+    saveImage(image);
+    return { newTitle, newPrice, image, installment, url };
+  } else {
+    console.log("URL Magalu");
+    const title = $(".sc-dcJsrY.jjGTqv").text(); // Extrair o título da página
+    const newPrice = $(".sc-dcJsrY.eLxcFM.sc-kbdlSk.edtRSh").text(); // Extrair o preço do produto
+    const image = $(".sc-fUnMCh.lhoQy").attr("src"); // Extrair o URL da imagem do produto
+    const installment = $(".sc-dcJsrY.eRIzys.sc-bdOgaJ.kflUR").text(); // Extrair informações de parcelamento
+
+    const newTitle = title.substring(0, 47) + "...";
+
+    console.log(newTitle, url, title);
+    saveImage(image);
+    return { newTitle, newPrice, image, installment, url };
+  }
 }
-
 
 // Função para gerar imagem com os dados do produto
 async function generateProductImage(data) {
-    const browser = await puppeteer.launch();
-    const page = await browser.newPage();
-    
-    
-    if(isMagazineLuizaURL(data.url)) {
-        const htmlContent = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                
-        @import url('https://fonts.googleapis.com/css2?family=Nunito&display=swap');
+  const browser = await puppeteer.launch();
+  const page = await browser.newPage();
 
-        html, body {
-            padding: 0;
-            margin: 0;
-            box-sizing: border-box;
-            width: 100%;
-            height: 100%;
-            font-family: 'Nunito', sans-serif;
-        }
+  registerFont("Nunito-VariableFont_wght.ttf", { family: "Nunito-Regular" });
+  registerFont("Nunito-VariableFont_wght.ttf", { family: "Nunito-Bold" });
 
+  // Defina as dimensões da imagem
+  const largura = 1080;
+  const altura = 1920;
 
-        .content {
-            width: 60%;
-            height: 120rem;
-            background-color: orange;
-        }
+  // Crie um novo canvas
+  const canvas = createCanvas(largura, altura);
+  const contexto = canvas.getContext("2d");
 
-        .content img {
-            width: 70%;
-            position: absolute;
-            top: 25rem; 
-            left: 17rem;
-        }
+  // Carregue uma imagem de fundo
+  loadImage("background.png").then((imagemDeFundo) => {
+    // Desenhe a imagem de fundo no canvas
+    contexto.drawImage(imagemDeFundo, 0, 0, largura, altura);
 
-        .content .title {
-            width: 100%;
-            position: absolute;
-            top: 73rem;
-            left: 9rem;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-        }
+    const texto = data.newTitle;
+    // Adicione texto
+    contexto.fillStyle = "black";
+    contexto.font = "55px Nunito-Regular";
 
-        .title h1 {
-            font-size: 55px;
-            width: 100%;
-            text-align: center;
-            margin: 1rem 0;
-            margin-bottom: 1px;
-        }
+    // Divida o texto em duas partes
+    const metadeTexto = texto.length / 2;
+    const primeiraParte = texto.substring(0, metadeTexto);
+    const segundaParte = texto.substring(metadeTexto);
+    const larguraTexto1 = contexto.measureText(primeiraParte).width;
+    const larguraTexto2 = contexto.measureText(segundaParte).width;
 
-        .price {
-            text-align: center;
-            width: 30rem;
-        }
+    // Calcule as coordenadas X e Y para posicionar as duas linhas de texto
+    const x1 = (largura - larguraTexto1) / 2;
+    const x2 = (largura - larguraTexto2) / 2; // Coordenada X fixa
+    const yPrimeiraLinha = 1260; // Coordenada Y para a primeira linha
+    const ySegundaLinha = 1330; // Coordenada Y para a segunda linha
 
-        .price h1 {
-            font-size: 80px;
-            font-weight: bold;
-            border-radius: 1rem;
-            background-color: white;
-        }
+    // Adicione as duas linhas de texto ao canvas
+    contexto.fillText(primeiraParte, x1, yPrimeiraLinha);
+    contexto.fillText(segundaParte, x2, ySegundaLinha);
 
-        .title h2 {
-            font-size: 35px;
-        }
+    // Defina a cor de fundo (padding) ao redor do texto
+    contexto.fillStyle = "white";
 
-            </style>
-            <link rel="preconnect" href="https://fonts.googleapis.com">
-            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-            <link href="https://fonts.googleapis.com/css2?family=Nunito&display=swap" rel="stylesheet">
-            <title>Postagem de produto</title>
-        </head>
-        <body>
-            <img src="background.png" alt="">
-            <div class="content">
-                <img src="${data.image}" alt="">
-                <div class="title">
-                    <h1>${data.newTitle}</h1>
-                    <div class="price">
-                        <h1>${data.price}</h1>
-                    </div>
-                    <h2>${data.installment}</h3>
-                </div>
-            </div>
-        </body>
-        </html>`
+    // Texto dinâmico que deseja centralizar
+    const valor = data.newPrice;
 
-    // Configure o conteúdo da página com o HTML gerado
-    await page.setContent(htmlContent);
+    // Defina a fonte e o tamanho do texto
+    contexto.font = "80px Nunito-Bold";
 
-    
-    fs.writeFileSync('temp.html', htmlContent);
+    // Calcule as dimensões do texto dinâmico
+    const larguraValor = contexto.measureText(valor).width;
+    const alturaValor = 80; // Altura da fonte
 
-    // Abra o arquivo HTML em uma nova página do navegador
-    await page.goto(`file://${process.cwd()}/temp.html`);
+    // Defina as coordenadas e dimensões da caixa de fundo com padding com base nas dimensões do texto
+    const xCaixa = largura / 2 - larguraValor / 2; // Centraliza horizontalmente
+    const yCaixa = 1380; // Centraliza verticalmente
+    const padding = 10; // Tamanho do padding
+    const raioCantos = 15; // Raio dos cantos arredondados
 
+    // Desenhe a caixa de fundo com padding e cantos arredondados com base nas dimensões do texto
+    contexto.roundRect(
+      xCaixa - padding,
+      yCaixa - padding,
+      larguraValor + 2 * padding,
+      alturaValor + 2 * padding,
+      raioCantos
+    );
+    contexto.fill();
 
-    // Defina a área de recorte (x, y, largura, altura)
-    const clip = { x: 0, y: 0, width: 1080, height: 1920 };
+    // Defina a cor do texto
+    contexto.fillStyle = "black";
 
-    // Capture o screenshot da área de recorte
-    const screenshotBuffer = await page.screenshot({ clip });
+    // Escreva o texto centralizado dentro da caixa de fundo com padding
+    contexto.fillText(valor, xCaixa, yCaixa + alturaValor - 10);
 
-    // Salve ou processe o screenshotBuffer conforme necessário
+    contexto.fillStyle = "black";
 
-    await browser.close();
-    return screenshotBuffer;
-    }
+    const parcelamento = !data.installment ? "A vista" : data.installment;
 
-    if(isAmazonURL(data.url)) {
+    contexto.font = "35px Nunito-Regular";
 
-        const htmlContent = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                
-        @import url('https://fonts.googleapis.com/css2?family=Nunito&display=swap');
+    const larguraParcelamento = contexto.measureText(parcelamento).width;
 
-        html, body {
-            padding: 0;
-            margin: 0;
-            box-sizing: border-box;
-            width: 100%;
-            height: 100%;
-            font-family: 'Nunito', sans-serif;
-        }
+    const xParcelamento = (largura - larguraParcelamento) / 2;
 
+    contexto.fillText(parcelamento, xParcelamento, 1520);
+    // Carregue uma imagem para adicionar ao canvas
+    loadImage("imagem.jpg").then((outraImagem) => {
+      const larguraMaxima = 730; // Por exemplo, 100px de margem em cada lado
+      const alturaMaxima = 640; // Por exemplo, 100px de margem em cima e em baixo
 
-        .content {
-            width: 1089px;
-            height: 1920px;
-            background-color: orange;
-        }
+      // Calcule as novas dimensões da imagem de forma proporcional
+      let novaLargura = outraImagem.width;
+      let novaAltura = outraImagem.height;
+      console.log(novaAltura, novaLargura)
 
-        .content img {
-            width: 60%;
-            max-height: 80%;
-            position: absolute;
-            top: 22rem; 
-            left: 40%;
-            ransform: translateX(-40%);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-        }
+      if(novaAltura < alturaMaxima){
+        novaAltura = alturaMaxima
+        novaLargura = (novaAltura / outraImagem.height) * outraImagem.width;
+      }
 
-        .content .title {
-            width: 100%;
-            position: absolute;
-            top: 75rem;
-            left: 9rem;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-        }
+      if(novaLargura < larguraMaxima) {
+        novaLargura = larguraMaxima
+        novaAltura = (novaLargura / outraImagem.width) * outraImagem.height;
+      }
 
-        .title h1 {
-            font-size: 55px;
-            width: 100%;
-            text-align: center;
-            margin: 1rem 0;
-            margin-bottom: 1px;
-        }
+      if (novaLargura > larguraMaxima) {
+        novaLargura = larguraMaxima;
+        novaAltura = (novaLargura / outraImagem.width) * outraImagem.height;
+      }
 
-        .price {
-            text-align: center;
-            width: 30rem;
-        }
+      if (novaAltura > alturaMaxima) {
+        novaAltura = alturaMaxima;
+        novaLargura = (novaAltura / outraImagem.height) * outraImagem.width;
+      }
 
-        .price h1 {
-            font-size: 80px;
-            font-weight: bold;
-            border-radius: 1rem;
-            background-color: white;
-        }
+      // Calcule as coordenadas X e Y para centralizar a imagem
+      const x = (largura - novaLargura) / 2;
+      const y = (altura - novaAltura) / 4.5;
 
-        .title h2 {
-            font-size: 35px;
-        }
+      // Desenhe a imagem adicionada no canvas
+      contexto.drawImage(outraImagem, x, y, novaLargura, novaAltura);
 
-            </style>
-            <link rel="preconnect" href="https://fonts.googleapis.com">
-            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-            <link href="https://fonts.googleapis.com/css2?family=Nunito&display=swap" rel="stylesheet">
-            <title>Postagem de produto</title>
-        </head>
-        <body>
-            <img src="background.png" alt="">
-            <div class="content">
-                <img src="${data.image}" alt="">
-                <div class="title">
-                    <h1>${data.newTitle}</h1>
-                    <div class="price">
-                        <h1>${data.price}</h1>
-                    </div>
-                    <h2>${data.installment == "" ? 'A vista' : data.installment}</h3>
-                </div>
-            </div>
-        </body>
-        </html>`
-
-    // Configure o conteúdo da página com o HTML gerado
-    await page.setContent(htmlContent);
-
-    
-    fs.writeFileSync('temp.html', htmlContent);
-
-    // Abra o arquivo HTML em uma nova página do navegador
-    await page.goto(`file://${process.cwd()}/temp.html`);
-
-
-    // Defina a área de recorte (x, y, largura, altura)
-    const clip = { x: 0, y: 0, width: 1080, height: 1920 };
-
-    // Capture o screenshot da área de recorte
-    const screenshotBuffer = await page.screenshot({ clip });
-
-    // Salve ou processe o screenshotBuffer conforme necessário
-
-    await browser.close();
-    return screenshotBuffer;
-    }
-    
+      // Salve a imagem com as adições em um arquivo
+      const stream = canvas.createPNGStream();
+      const out = fs.createWriteStream(__dirname + "/nova-imagem.png");
+      stream.pipe(out);
+      out.on("finish", () => console.log("Imagem gerada com sucesso."));
+    });
+  });
 }
 
 // Evento para escutar mensagens enviadas ao bot
 bot.onText(/\/start/, (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, 'Envie o link do produto que deseja gerar a imagem.');
+  const chatId = msg.chat.id;
+  bot.sendMessage(chatId, "Envie o link do produto que deseja gerar a imagem.");
 });
 
-bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-    const productUrl = msg.text;
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const productUrl = msg.text;
 
-    try {
-        const productData = await scrapeProductData(productUrl);
-        const productImage = await generateProductImage(productData);
-        
-        await bot.sendPhoto(chatId, productImage);
+  try {
+    const productData = await scrapeProductData(productUrl);
+    await generateProductImage(productData);
 
-        bot.sendMessage(chatId, 'Imagem gerada com sucesso!');
-    } catch (error) {
-        console.error('Ocorreu um erro:', error);
-        bot.sendMessage(chatId, 'Ocorreu um erro ao processar o produto.');
-    }
+    setTimeout(async function () {
+      const image = fs.readFileSync("nova-imagem.png");
+
+      await bot.sendPhoto(chatId, image);
+    }, 2000);
+
+    await bot.sendMessage(chatId, "Imagem gerada com sucesso!");
+  } catch (error) {
+    console.error("Ocorreu um erro:", error);
+    bot.sendMessage(chatId, "Ocorreu um erro ao processar o produto.");
+  }
 });
